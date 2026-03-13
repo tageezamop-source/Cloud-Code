@@ -12,12 +12,19 @@ interface User {
   created_at: string | null
 }
 
+interface SignupResult {
+  needs_verification: boolean
+  message: string
+  demo_verify_url: string
+  email: string
+}
+
 interface AuthContextType {
   user: User | null
   loading: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  signup: (username: string, password: string, email?: string) => Promise<void>
+  signup: (username: string, password: string, email: string, name?: string) => Promise<SignupResult>
   isAdmin: boolean
 }
 
@@ -28,13 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/auth/me').then((data: { user: User | null }) => {
-      setUser(data.user)
-    }).catch(() => {
-      setUser(null)
-    }).finally(() => {
-      setLoading(false)
-    })
+    api.get('/auth/me')
+      .then((d: { user: User | null }) => setUser(d.user))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
   }, [])
 
   const login = async (username: string, password: string) => {
@@ -47,20 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  const signup = async (username: string, password: string, email?: string) => {
-    const data = await api.post('/auth/signup', { username, password, email })
-    setUser(data.user)
+  const signup = async (username: string, password: string, email: string, name = ''): Promise<SignupResult> => {
+    // Does NOT auto-login — returns verification info
+    return api.post('/auth/signup', { username, password, email, name })
   }
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      login,
-      logout,
-      signup,
-      isAdmin: user?.role === 'admin',
-    }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, signup, isAdmin: user?.role === 'admin' }}>
       {children}
     </AuthContext.Provider>
   )

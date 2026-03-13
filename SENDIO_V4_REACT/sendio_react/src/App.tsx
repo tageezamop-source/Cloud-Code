@@ -5,6 +5,7 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Campaigns from './pages/Campaigns'
+import CampaignEditor from './pages/CampaignEditor'
 import Analytics from './pages/Analytics'
 import Inbox from './pages/Inbox'
 import Accounts from './pages/Accounts'
@@ -17,9 +18,11 @@ import Unsubscribes from './pages/Unsubscribes'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
-  if (loading) return <div className="flex items-center justify-center h-screen" style={{ background: '#07101e' }}>
-    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-  </div>
+  if (loading) return (
+    <div className="flex items-center justify-center h-screen bg-page">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
@@ -40,6 +43,11 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/campaigns" replace /> : <Login />} />
       <Route path="/signup" element={user ? <Navigate to="/campaigns" replace /> : <Signup />} />
 
+      {/* Campaign editor — full page, no sidebar */}
+      <Route path="/campaign/:id/wizard" element={<PrivateRoute><CampaignEditor /></PrivateRoute>} />
+      <Route path="/campaign/new/wizard" element={<PrivateRoute><CampaignEditor /></PrivateRoute>} />
+
+      {/* Dashboard with sidebar */}
       <Route path="/" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
         <Route path="campaigns" element={<Campaigns />} />
         <Route path="analytics" element={<Analytics />} />

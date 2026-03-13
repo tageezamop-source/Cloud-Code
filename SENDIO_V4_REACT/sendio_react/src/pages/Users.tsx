@@ -128,7 +128,7 @@ export default function Users() {
                       </>
                     )}
                     {u.role === 'admin' && (
-                      <Shield size={16} className="text-indigo-400" title="Admin — protected" />
+                      <span title="Admin — protected"><Shield size={16} className="text-indigo-400" /></span>
                     )}
                   </div>
                 </td>

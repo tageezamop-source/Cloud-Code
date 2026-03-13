@@ -9,6 +9,7 @@ import hmac
 import time
 import csv
 import io
+import secrets
 
 try:
     import dns.resolver as _dns_resolver
@@ -48,6 +49,7 @@ class User(db.Model):
     google_email = db.Column(db.String(200))
     last_login = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    verification_token = db.Column(db.String(100))
 
     def to_dict(self):
         return {
@@ -141,6 +143,7 @@ class SequenceStep(db.Model):
     subject = db.Column(db.String(500))
     body_html = db.Column(db.Text)
     wait_days = db.Column(db.Integer, default=3)
+    variants_json = db.Column(db.Text)  # JSON array of {label,subject,body,enabled}
 
     def to_dict(self):
         return {
@@ -150,6 +153,7 @@ class SequenceStep(db.Model):
             'subject': self.subject,
             'body_html': self.body_html,
             'wait_days': self.wait_days,
+            'variants': json.loads(self.variants_json) if self.variants_json else None,
         }
 
 
@@ -507,9 +511,11 @@ def login():
     password = data.get('password', '')
     user = User.query.filter_by(username=username).first()
     if not user or user.password != hash_pw(password):
-        return jsonify({'error': 'Invalid credentials'}), 401
+        return jsonify({'error': 'Invalid username or password'}), 401
     if not user.active:
         return jsonify({'error': 'Account disabled'}), 403
+    if not user.email_verified:
+        return jsonify({'error': 'Please verify your email before logging in', 'needs_verification': True}), 403
     session['user_id'] = user.id
     session['role'] = user.role
     user.last_login = datetime.utcnow()
@@ -536,23 +542,53 @@ def signup():
     data = request.json or {}
     username = data.get('username', '').strip()
     password = data.get('password', '')
-    google_email = data.get('email', '')
+    google_email = data.get('email', '').strip()
+    full_name = data.get('name', '').strip()
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
+    if not google_email:
+        return jsonify({'error': 'Email address required'}), 400
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username already taken'}), 400
+    if User.query.filter_by(google_email=google_email).first():
+        return jsonify({'error': 'Email already registered'}), 400
+    token = secrets.token_urlsafe(32)
     user = User(
         username=username,
         password=hash_pw(password),
         role='user',
         google_email=google_email,
-        email_verified=True,
+        email_verified=False,
+        verification_token=token,
     )
     db.session.add(user)
     db.session.commit()
-    session['user_id'] = user.id
-    session['role'] = user.role
-    return jsonify({'user': user.to_dict()})
+    # In production you'd send a real email here.
+    # For demo we return the token so the frontend can show the verify link.
+    verify_url = f'http://localhost:5000/auth/verify/{token}'
+    return jsonify({
+        'needs_verification': True,
+        'message': f'Account created! Check {google_email} for a verification link.',
+        'demo_verify_url': verify_url,
+        'email': google_email,
+    })
+
+
+@app.route('/auth/verify/<token>', methods=['GET'])
+def verify_email(token):
+    from flask import redirect
+    user = User.query.filter_by(verification_token=token).first()
+    if not user:
+        return render_template_string(
+            '<html><body style="font-family:sans-serif;display:flex;align-items:center;'
+            'justify-content:center;height:100vh;background:#f5f5f9">'
+            '<div style="text-align:center"><h2 style="color:#ef4444">Invalid or expired link</h2>'
+            '<a href="http://localhost:5173/login" style="color:#6366f1">Back to login</a></div></body></html>'
+        ), 400
+    user.email_verified = True
+    user.verification_token = None
+    db.session.commit()
+    return redirect('http://localhost:5173/login?verified=1')
 
 
 # ─────────────────────────── CAMPAIGN ROUTES ───────────────────────────
@@ -742,6 +778,7 @@ def steps(cid):
         subject=data.get('subject', ''),
         body_html=data.get('body_html', ''),
         wait_days=data.get('wait_days', 3),
+        variants_json=json.dumps(data['variants']) if 'variants' in data else None,
     )
     db.session.add(step)
     db.session.commit()
@@ -1470,6 +1507,7 @@ def create_defaults():
                 password=hash_pw('admin123'),
                 role='admin',
                 email_verified=True,
+                google_email='admin@sendio.io',
             )
             db.session.add(admin)
             db.session.commit()
